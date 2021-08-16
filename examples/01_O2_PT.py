@@ -30,7 +30,7 @@ t0 = time.time()
 #
 # Mean Field
 #
-mol = gto.M(verbose=4, atom="O 0 0 0; O 0 0 1.208", basis="ccpvdz")
+mol = gto.M(verbose=5, atom="O 0 0 0; O 0 0 1.208", basis="ccpvdz", symmetry=True)
 mf = scf.RHF(mol).run()
 
 #

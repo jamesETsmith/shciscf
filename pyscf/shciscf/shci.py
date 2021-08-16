@@ -37,7 +37,6 @@ import pyscf.lib
 from pyscf.lib import logger
 from pyscf import mcscf, symm
 
-from . import symm_utils
 
 ndpointer = numpy.ctypeslib.ndpointer
 
@@ -59,6 +58,8 @@ except ImportError:
 
 # Libraries
 from pyscf.lib import load_library
+from . import symm_utils
+from . import spin_utils
 
 # TODO: Organize this better.
 shciLib = load_library("libshciscf")
@@ -195,7 +196,7 @@ class SHCI(pyscf.lib.StreamObject):
         >>> mc.kernel()
 
     """
-    def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1, memory=None):
+    def __init__(self, mol=None, num_thrds=1, memory=None):
         self.mol = mol
         if mol is None:
             self.stdout = sys.stdout
@@ -946,14 +947,24 @@ class SHCI(pyscf.lib.StreamObject):
         if isinstance(nelec, (int, numpy.integer)):
             nelecb = nelec // 2
             neleca = nelec - nelecb
+            nelec_tuple = (neleca, nelecb)
         else:
-            neleca, nelecb = nelec
-        s = (neleca - nelecb) * 0.5
-        ss = s * (s + 1)
+            nelec_tuple = nelec
+
         if isinstance(civec, int):
-            return ss, s * 2 + 1
+            return spin_utils.restricted_spin_square(self, civec, norb, nelec_tuple)
+
         else:
-            return [ss] * len(civec), [s * 2 + 1] * len(civec)
+            nroots = len(civec)
+            ss_values = []
+            multiplicity_values = []
+
+            for i in range(nroots):
+                ss, multiplicity = spin_utils.restricted_spin_square(self, i, norb, nelec_tuple)
+                ss_values.append(ss)
+                multiplicity_values.append(multiplicity)
+
+            return ss_values, multiplicity_values
 
     def cleanup_dice_files(self):
         """
@@ -1125,6 +1136,7 @@ def writeSHCIConfFile(SHCI, nelec, Restart):
     if SHCI.DoRDM:
         f.write("DoOneRDM\n")
         f.write("DoSpinOneRDM\n")
+        f.write("DoSpinRDM\n")
         f.write("DoRDM\n")
     for line in SHCI.extraline:
         f.write("%s\n" % line)
@@ -1363,7 +1375,7 @@ def readEnergy(SHCI):
         return list(calc_e)
 
 
-def SHCISCF(mf, norb, nelec, maxM=1000, tol=1.0e-8, *args, **kwargs):
+def SHCISCF(mf, norb, nelec, *args, **kwargs):
     """Shortcut function to setup CASSCF using the SHCI solver.  The SHCI
     solver is properly initialized in this function so that the 1-step
     algorithm can applied with SHCI-CASSCF.
@@ -1378,7 +1390,7 @@ def SHCISCF(mf, norb, nelec, maxM=1000, tol=1.0e-8, *args, **kwargs):
     """
 
     mc = mcscf.CASSCF(mf, norb, nelec, *args, **kwargs)
-    mc.fcisolver = SHCI(mf.mol, maxM, tol=tol)
+    mc.fcisolver = SHCI(mf.mol)
     # mc.callback = mc.fcisolver.restart_scheduler_() #TODO
     if mc.chkfile == mc._scf._chkfile.name:
         # Do not delete chkfile after mcscf
